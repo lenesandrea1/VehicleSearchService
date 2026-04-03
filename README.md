@@ -2,95 +2,145 @@
 
 ## Descripción
 
-Web API de búsqueda y reserva de vehículos para el reto técnico **Outlet Rental Cars**. Expone una **query** HTTP para buscar vehículos disponibles (localidad de recogida y devolución, ventana en UTC) y un **command** para crear reservas, aplicando reglas de disponibilidad por estación, mercado, estado del vehículo y solapamiento con reservas activas. El dominio está aislado en **Clean Architecture**; los datos transaccionales viven en **MySQL** y el catálogo descriptivo en **MongoDB**.
+Web API para el reto **Outlet Rental Cars**: los clientes **buscan** vehículos disponibles según localidad de recogida y devolución y un rango en **UTC**, y **crean reservas** con reglas de negocio explícitas. La solución prioriza **coherencia documentación–código**, **decisiones justificadas** y **pruebas de integración reales** (Docker / Testcontainers).
 
-## Estructura
+## Por qué esta arquitectura y esta tecnología
+
+| Elección | Motivo |
+|----------|--------|
+| **MySQL** (EF Core) | Información **transaccional** con **integridad referencial** (localidades, flota, reservas). Encaja con consistencia fuerte y modelo relacional claro. |
+| **MongoDB** | **Catálogo** (mercados, tipos de vehículo): esquema **evolutivo**, bajo acoplamiento con el agregado transaccional; solo lectura desde la API de búsqueda. |
+| **Capas (Clean Architecture)** | **Dominio** sin dependencias de infraestructura; **aplicación** define puertos; **infraestructura** implementa adaptadores. Las reglas de negocio permanecen testeables y estables al cambiar persistencia. |
+| **CQRS ligero** | **Query** (`SearchVehiclesQueryHandler`) vs **command** (`CreateReservationCommandHandler`) separan lectura y escritura en casos de uso distintos, sin bus global. |
+
+## Estructura del código
 
 | Proyecto | Rol |
 |----------|-----|
-| `VehicleSearchService.Domain` | Entidades, reglas de negocio, eventos de dominio |
-| `VehicleSearchService.Application` | Puertos (persistencia, mensajería), queries/commands, handlers |
-| `VehicleSearchService.Infrastructure` | EF Core + MySQL, MongoDB para catálogo, publicador in-memory de eventos |
-| `VehicleSearchService.Api` | Host HTTP, Swagger, migraciones al arranque (configurable) |
-| `VehicleSearchService.Tests.Unit` | Especificaciones del dominio |
-| `VehicleSearchService.Tests.Integration` | Pruebas con **Testcontainers** (MySQL + Mongo) para el endpoint de búsqueda; smoke del host sin contenedores |
+| `VehicleSearchService.Domain` | Entidades, reglas, eventos de dominio |
+| `VehicleSearchService.Application` | Puertos, handlers, validación de ventana temporal (`RentalTimeWindowGuard`) |
+| `VehicleSearchService.Infrastructure` | MySQL, MongoDB, publicador in-memory de eventos |
+| `VehicleSearchService.Api` | HTTP, Swagger, ProblemDetails |
+| `VehicleSearchService.Tests.Unit` | Dominio, guard de fechas, handlers con dobles |
+| `VehicleSearchService.Tests.Integration` | **Testcontainers** (MySQL + Mongo) + `GET /api/vehicles/search` |
 
-## Decisiones técnicas
+## Datos de seed (escenario demo)
 
-- **Clean Architecture**: el dominio no referencia infraestructura; la aplicación define puertos (`ILocationReadRepository`, `ICatalogReader`, etc.) y los adaptadores viven en Infrastructure.
-- **CQRS ligero**: la búsqueda es una **query** con handler dedicado; la reserva es un **command** con otro handler. No hay bus de mensajes global: los eventos de dominio se publican por un contrato (`IDomainEventPublisher`) con una implementación **in-memory** y un manejador que registra en log, suficiente para el alcance del reto.
-- **MySQL + EF Core** para datos transaccionales (localidades, vehículos, reservas) con **seed** idempotente y migraciones al arranque opcionales vía configuración.
-- **MongoDB** para catálogo de solo lectura (mercados, tipos de vehículo), alineado con `MarketId` y `VehicleTypeCatalogId` del modelo. Si se desactiva el catálogo (`Catalog:Enabled=false`), la búsqueda sigue siendo correcta pero sin etiquetas legibles.
-- **Periodos en UTC** con intervalo semiabierto `[inicio, fin)` para coincidir con solapamientos de reservas y evitar ambigüedades en límites. La aplicación valida además que la recogida no sea pasada respecto a `TimeProvider` (en producción el reloj del sistema), lo que permite fijar el tiempo en tests.
-- **Pruebas**: reglas de negocio cubiertas en **unitarias** (dominio + handlers con dobles); **integración** del endpoint `GET /api/vehicles/search` contra **contenedores reales** (Testcontainers) para cumplir el enunciado sin depender de MySQL/Mongo instalados en la máquina del desarrollador. Un test ligero del host sigue desactivando migraciones y catálogo para arranque rápido.
-- **Errores de API**: respuestas `409` / `400` / `404` en reservas usan **ProblemDetails** (RFC 7807) en lugar de DTOs ad hoc.
-- **CI**: GitHub Actions ejecuta `dotnet test`; los tests de integración con Testcontainers requieren **Docker** en el ejecutor (`ubuntu-latest` lo incluye).
+Tras migrar con base vacía se cargan **identificadores estables** (`KnownIds`). Resumen útil para Swagger o curl:
 
-## Convenciones de dominio
+| Id (nombre en código) | Qué demuestra |
+|------------------------|-----------------|
+| `VehicleEconomy`, `VehicleSuv` | Madrid **EU-ES**, estado **Disponible**, aptos en búsqueda fuera del bloqueo. |
+| `VehicleWrongMarket` | Madrid pero solo habilitado para **EU-FR** → **excluido** en recogida Madrid (mercado ES). |
+| `VehicleOutOfService` | Madrid **EU-ES** pero estado **No disponible** → **excluido** del listado candidato. |
+| `VehicleParis` | París **EU-FR**, disponible → aparece solo en búsqueda con recogida en París. |
+| `ReservationSample` | Reserva **confirmada** sobre el economy **10–20 jun 2026 UTC** → **solapa** y excluye ese vehículo en ese rango. |
+| `LocationParis` | Segundo **mercado** (`EU-FR`) frente a Madrid/Barcelona (`EU-ES`). |
 
-- Periodos de alquiler en **UTC**, intervalo semiabierto `[inicio, fin)`.
-- La **localidad de devolución** puede diferir de la de recogida; la disponibilidad en búsqueda se evalúa respecto a la **recogida** y al **mercado** de esa localidad.
-- Las reservas **pendientes** o **confirmadas** bloquean solapamientos; **canceladas** y **completadas** no.
-- **Ventana temporal en API (búsqueda y reserva):** la recogida no puede ser anterior a “ahora” (UTC) y la devolución debe ser **estrictamente posterior** a la recogida. Si no se cumple, la API responde **400** con ProblemDetails.
+**Mongo:** mercados `EU-ES` / `EU-FR` y tipos `vt-economy`, `vt-suv`, `vt-compact`, `vt-van`, alineados con el seed relacional.
 
-## Requisitos
+Si tu MySQL ya tenía datos de una versión anterior del seed, elimina la base o el volumen de Docker y vuelve a migrar para cargar este escenario.
 
-- [.NET SDK 8.0](https://dotnet.microsoft.com/download/dotnet/8.0) (o superior con `rollForward` en `global.json`).
-- **MySQL 8** (local o Docker).
-- **MongoDB** (local o Docker) si dejas `Catalog:Enabled` en `true` (valor por defecto).
+## Reglas de negocio (API y dominio)
 
-## Base de datos con Docker
+- Ventana **semiabierta** `[pickup, return)` en **UTC**; entradas se normalizan a UTC en la API.
+- **No** recogida en el pasado (respecto a `TimeProvider`, en producción reloj del sistema).
+- **Devolución** estrictamente **posterior** a la recogida.
+- Búsqueda: vehículo en **estación de recogida**, **habilitado para el mercado** de esa localidad, **disponible**, sin **reserva activa** (pendiente/confirmada) que solape el rango.
+
+Errores **400** con **ProblemDetails** (`title` / `detail`) si el rango temporal es inválido (búsqueda y reserva).
+
+## Eventos de dominio (reserva creada)
+
+Tras persistir la reserva se publica `VehicleReservedEvent` vía `IDomainEventPublisher` (**in-memory**). Los handlers se ejecutan en proceso; si un handler **lanza**, el error se **registra** y **no revierte** la reserva ya guardada (decisión explícita de **resiliencia** frente a efectos secundarios como logging).
+
+## Contrato HTTP y códigos de error (ProblemDetails)
+
+| Situación | Código | Ejemplo `title` (búsqueda / reserva) |
+|-----------|--------|--------------------------------------|
+| Cuerpo o query inválido (model binding) | 400 | Validación (`ValidationProblemDetails`) |
+| Recogida en pasado o `return <= pickup` | 400 | `Invalid rental period.` |
+| Vehículo / localidad inexistente en reserva | 404 | `Vehicle not found.` / `Pickup location not found.` / `Return location not found.` |
+| Vehículo no alquilable (mercado, fechas, solape) | 409 | `Vehicle not available.` |
+| Periodo de reserva inválido en dominio | 400 | `Invalid reservation period.` |
+
+## Pruebas de integración (`VehiclesSearchEndpointTests`)
+
+Con **MySQL + Mongo** reales en contenedores (no es solo smoke del host), se comprueba el **endpoint de búsqueda**:
+
+| Test (nombre aproximado) | Cobertura |
+|--------------------------|-----------|
+| Retorno de vehículos disponibles + etiquetas de catálogo | 200, 2 ítems economy/suv, mercado España. |
+| Excluye economy con solape a reserva de ejemplo | Solo SUV en junio 2026. |
+| Excluye `VehicleWrongMarket` y `VehicleOutOfService` | No aparecen en resultados Madrid mayo. |
+| Búsqueda en París | Un ítem, mercado Francia. |
+| Recogida inexistente | Lista vacía. |
+| Fechas inválidas | 400 ProblemDetails. |
+
+El smoke del host (`ApiHostFixture`) sigue **sin** bases ni Mongo para arranque mínimo.
+
+## Puesta en marcha rápida (revisor / local)
 
 ```bash
 docker compose up -d
+dotnet run --project src/VehicleSearchService.Api
 ```
 
-Suben **MongoDB 7** (`27017`) y **MySQL 8** (`3306`). Cadena MySQL por defecto: usuario `root`, contraseña `local`, base `vehiclesearch`. El catálogo usa `mongodb://localhost:27017` y base `vehiclesearch_catalog` (`appsettings.json` → sección `Catalog`).
+Abre **Swagger** en la URL HTTPS o HTTP de `launchSettings.json` (`/swagger`). Requiere **.NET 8** y Docker para el compose. Los tests de integración necesitan **Docker** para Testcontainers.
 
-### Catálogo en MongoDB
+Cadena MySQL por defecto en `appsettings.json`: `root` / `local`, base `vehiclesearch`. Mongo: `mongodb://localhost:27017`, base `vehiclesearch_catalog` (sección `Catalog`).
 
-Colecciones `markets` y `vehicle_types`: la API rellena datos mínimos al arranque si están vacías (`Catalog:SeedOnStartup`), coherentes con el seed relacional (`EU-ES`, `vt-economy`, `vt-suv`). La búsqueda devuelve nombres legibles (`pickupMarketDisplayName`, `vehicleTypeDisplayName` por ítem).
+### Windows sin Docker
 
-- Sin Mongo (solo MySQL): pon `Catalog:Enabled` en `false`; la búsqueda sigue funcionando pero sin etiquetas del catálogo.
-- El **smoke** del `WebApplicationFactory` fuerza `Catalog:Enabled=false` para no requerir Mongo. Los tests del endpoint de búsqueda usan contenedor Mongo dedicado.
+Configura `ConnectionStrings:DefaultConnection` en `appsettings.Development.json` o **user-secrets**; levanta MySQL y Mongo manualmente o desactiva catálogo con `Catalog:Enabled=false`.
 
-### MySQL instalado en Windows (sin Docker)
+## Ejemplos HTTP (valores del seed)
 
-Con `dotnet run`, el entorno suele ser **Development**. Entonces se cargan `appsettings.json` y **`appsettings.Development.json`**; este último **reemplaza** la cadena `DefaultConnection`.
+Sustituye el host (`https://localhost:7182` o el que use tu perfil).
 
-- Si ves **`Access denied for user 'root'@'localhost'`**, tu contraseña no es `local`. Opciones:
-  1. Edita `src/VehicleSearchService.Api/appsettings.Development.json` y pon en `Password=` la contraseña real de `root` (o el usuario que uses). Si `root` no tiene contraseña, deja `Password=;` como está.
-  2. O define secretos de usuario (no se commitean):
-     ```bash
-     cd src/VehicleSearchService.Api
-     dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=localhost;Port=3306;Database=vehiclesearch;User=root;Password=AQUI_TU_CONTRASEÑA;"
-     ```
-- Crea la base **`vehiclesearch`** en MySQL si no existe (o el motor la creará al migrar según permisos).
+**Búsqueda Madrid (mayo 2026, fuera del bloqueo de la reserva):**
 
-## Compilar, migrar y ejecutar
+```http
+GET /api/vehicles/search?pickupLocationId=a0000001-0000-0000-0000-000000000001&returnLocationId=a0000001-0000-0000-0000-000000000002&pickupAtUtc=2026-05-01T10:00:00Z&returnAtUtc=2026-05-05T10:00:00Z
+```
+
+Respuesta 200 esperada: `items` con dos entradas (economy y suv), `pickupMarketId` `EU-ES`, `pickupMarketDisplayName` acorde al catálogo.
+
+**Búsqueda con rango inválido:**
+
+```http
+GET /api/vehicles/search?pickupLocationId=a0000001-0000-0000-0000-000000000001&returnLocationId=a0000001-0000-0000-0000-000000000002&pickupAtUtc=2026-06-05T10:00:00Z&returnAtUtc=2026-06-05T10:00:00Z
+```
+
+400 con cuerpo ProblemDetails (`title`: invalid rental period).
+
+**Crear reserva (JSON):**
+
+```http
+POST /api/reservations
+Content-Type: application/json
+
+{
+  "vehicleId": "b0000001-0000-0000-0000-000000000002",
+  "pickupLocationId": "a0000001-0000-0000-0000-000000000001",
+  "returnLocationId": "a0000001-0000-0000-0000-000000000002",
+  "pickupAtUtc": "2027-01-10T10:00:00Z",
+  "returnAtUtc": "2027-01-15T10:00:00Z"
+}
+```
+
+201 con `reservationId` si el vehículo está disponible en ese rango; **409** si hay conflicto; **404** si ids no existen (ajusta fechas al futuro respecto al reloj del servidor).
+
+## Compilar y probar
 
 ```bash
 dotnet build
 dotnet test
-dotnet run --project src/VehicleSearchService.Api
 ```
 
-Los tests de integración del endpoint de búsqueda levantan **MySQL 8** y **MongoDB 7** vía Testcontainers: hace falta **Docker** en ejecución (local o en CI).
+**CI:** workflow en `.github/workflows`; `dotnet test` incluye integración con contenedores en Linux con Docker.
 
-Al arranque, si `RunMigrations` es `true`, se aplican migraciones EF y se ejecuta el **seed** (solo si la base está vacía).
-
-**Swagger** (desarrollo): URL HTTPS del `launchSettings.json` + `/swagger`.
-
-### Endpoints principales
-
-- `GET /api/vehicles/search?pickupLocationId=&returnLocationId=&pickupAtUtc=&returnAtUtc=` (ISO 8601 recomendado). La respuesta incluye `items` y, si el catálogo está activo, `pickupMarketId`, `pickupMarketDisplayName` y por vehículo `vehicleTypeDisplayName`.
-- `POST /api/reservations` con cuerpo JSON (`vehicleId`, `pickupLocationId`, `returnLocationId`, `pickupAtUtc`, `returnAtUtc`).
-
-### Datos de ejemplo (seed)
-
-Identificadores estables en `KnownIds` (Infrastructure): Madrid, Barcelona, dos vehículos en Madrid y una reserva de ejemplo que bloquea el vehículo “economy” en un rango de fechas (útil para probar conflictos).
-
-## Migraciones EF (CLI)
+## Migraciones EF
 
 ```bash
 dotnet ef migrations add Nombre --project src/VehicleSearchService.Infrastructure --startup-project src/VehicleSearchService.Api --output-dir Persistence/Migrations

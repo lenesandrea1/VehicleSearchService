@@ -16,7 +16,20 @@ public sealed class InMemoryDomainEventPublisher(
             if (e is VehicleReservedEvent v)
             {
                 foreach (var handler in vehicleReservedHandlers)
-                    await handler.HandleAsync(v, cancellationToken).ConfigureAwait(false);
+                {
+                    try
+                    {
+                        await handler.HandleAsync(v, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(
+                            ex,
+                            "Domain event handler {HandlerType} failed for reservation {ReservationId}; reservation persistence is already committed.",
+                            handler.GetType().Name,
+                            v.ReservationId);
+                    }
+                }
             }
             else
             {

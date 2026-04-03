@@ -17,8 +17,12 @@ public static class MongoCatalogSeed
         var vehicleTypes = database.GetCollection<VehicleTypeDocument>("vehicle_types");
 
         await markets
-            .InsertOneAsync(
-                new MarketDocument { Id = "EU-ES", Name = "Spain" },
+            .InsertManyAsync(
+                new[]
+                {
+                    new MarketDocument { Id = "EU-ES", Name = "Spain" },
+                    new MarketDocument { Id = "EU-FR", Name = "France" }
+                },
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
@@ -27,7 +31,9 @@ public static class MongoCatalogSeed
                 new[]
                 {
                     new VehicleTypeDocument { Id = "vt-economy", Name = "Economy" },
-                    new VehicleTypeDocument { Id = "vt-suv", Name = "SUV" }
+                    new VehicleTypeDocument { Id = "vt-suv", Name = "SUV" },
+                    new VehicleTypeDocument { Id = "vt-compact", Name = "Compact" },
+                    new VehicleTypeDocument { Id = "vt-van", Name = "Van" }
                 },
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);

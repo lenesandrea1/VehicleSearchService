@@ -37,6 +37,30 @@ public sealed class VehiclesSearchEndpointTests
         Assert.Equal(2, payload.Items.Count);
         Assert.Contains(payload.Items, i => i.Id == KnownIds.VehicleEconomy && i.VehicleTypeDisplayName == "Economy");
         Assert.Contains(payload.Items, i => i.Id == KnownIds.VehicleSuv && i.VehicleTypeDisplayName == "SUV");
+        Assert.DoesNotContain(payload.Items, i => i.Id == KnownIds.VehicleWrongMarket);
+        Assert.DoesNotContain(payload.Items, i => i.Id == KnownIds.VehicleOutOfService);
+    }
+
+    [Fact]
+    public async Task Search_at_Paris_returns_only_vehicle_in_French_market()
+    {
+        var client = _fixture.Factory.CreateClient();
+        var url = SearchUrl(
+            KnownIds.LocationParis,
+            KnownIds.LocationParis,
+            "2026-05-10T10:00:00.000Z",
+            "2026-05-14T10:00:00.000Z");
+
+        var response = await client.GetAsync(url);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<SearchResponse>(JsonOptions);
+        Assert.NotNull(payload);
+        Assert.Equal("EU-FR", payload.PickupMarketId);
+        Assert.Equal("France", payload.PickupMarketDisplayName);
+        var item = Assert.Single(payload.Items);
+        Assert.Equal(KnownIds.VehicleParis, item.Id);
+        Assert.Equal("SUV", item.VehicleTypeDisplayName);
     }
 
     [Fact]
