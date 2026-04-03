@@ -34,6 +34,13 @@ public sealed class ReservationsController(ICreateReservationCommandHandler crea
             var result = await createHandler.HandleAsync(command, cancellationToken).ConfigureAwait(false);
             return Created($"/api/reservations/{result.ReservationId}", result);
         }
+        catch (InvalidRentalTimeWindowException ex)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Invalid rental period.",
+                detail: ex.Message);
+        }
         catch (VehicleNotFoundException)
         {
             return Problem(statusCode: StatusCodes.Status404NotFound, title: "Vehicle not found.");

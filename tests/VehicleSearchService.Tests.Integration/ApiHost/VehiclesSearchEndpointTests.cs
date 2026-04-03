@@ -59,6 +59,36 @@ public sealed class VehiclesSearchEndpointTests
     }
 
     [Fact]
+    public async Task Search_returns_400_when_pickup_is_in_the_past()
+    {
+        var client = _fixture.Factory.CreateClient();
+        var url = SearchUrl(
+            KnownIds.LocationMadrid,
+            KnownIds.LocationBarcelona,
+            "2020-01-01T10:00:00.000Z",
+            "2020-01-05T10:00:00.000Z");
+
+        var response = await client.GetAsync(url);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Search_returns_400_when_return_is_not_after_pickup()
+    {
+        var client = _fixture.Factory.CreateClient();
+        var url = SearchUrl(
+            KnownIds.LocationMadrid,
+            KnownIds.LocationBarcelona,
+            "2026-06-05T10:00:00.000Z",
+            "2026-06-05T10:00:00.000Z");
+
+        var response = await client.GetAsync(url);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Search_returns_empty_when_pickup_location_unknown()
     {
         var client = _fixture.Factory.CreateClient();

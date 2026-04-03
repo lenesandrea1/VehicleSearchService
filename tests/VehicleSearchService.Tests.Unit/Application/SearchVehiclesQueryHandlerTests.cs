@@ -4,6 +4,7 @@ using VehicleSearchService.Application.Abstractions.Persistence;
 using VehicleSearchService.Application.Features.VehicleSearch;
 using VehicleSearchService.Domain.Entities;
 using VehicleSearchService.Domain.Enums;
+using VehicleSearchService.Tests.Unit.TestDoubles;
 
 namespace VehicleSearchService.Tests.Unit.Application;
 
@@ -64,11 +65,13 @@ public sealed class SearchVehiclesQueryHandlerTests
                     ["vt-test"] = new VehicleTypeCatalogEntry("vt-test", "Compact")
                 });
 
+        var clock = new UtcFrozenTimeProvider(new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc));
         var handler = new SearchVehiclesQueryHandler(
             locations.Object,
             vehicles.Object,
             reservations.Object,
-            catalog.Object);
+            catalog.Object,
+            clock);
 
         var result = await handler.HandleAsync(new SearchVehiclesQuery(pickupId, pickupId, pickupAt, returnAt));
 

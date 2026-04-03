@@ -4,6 +4,7 @@ using VehicleSearchService.Application.Abstractions.Persistence;
 using VehicleSearchService.Application.Common.Exceptions;
 using VehicleSearchService.Application.Features.Reservations;
 using VehicleSearchService.Domain.Entities;
+using VehicleSearchService.Tests.Unit.TestDoubles;
 
 namespace VehicleSearchService.Tests.Unit.Application;
 
@@ -23,11 +24,13 @@ public sealed class CreateReservationCommandHandlerTests
         var reservations = new Mock<IReservationRepository>();
         var publisher = new Mock<IDomainEventPublisher>();
 
+        var clock = new UtcFrozenTimeProvider(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
         var handler = new CreateReservationCommandHandler(
             vehicles.Object,
             locations.Object,
             reservations.Object,
-            publisher.Object);
+            publisher.Object,
+            clock);
 
         var command = new CreateReservationCommand(
             vehicleId,

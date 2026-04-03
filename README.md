@@ -21,7 +21,7 @@ Web API de búsqueda y reserva de vehículos para el reto técnico **Outlet Rent
 - **CQRS ligero**: la búsqueda es una **query** con handler dedicado; la reserva es un **command** con otro handler. No hay bus de mensajes global: los eventos de dominio se publican por un contrato (`IDomainEventPublisher`) con una implementación **in-memory** y un manejador que registra en log, suficiente para el alcance del reto.
 - **MySQL + EF Core** para datos transaccionales (localidades, vehículos, reservas) con **seed** idempotente y migraciones al arranque opcionales vía configuración.
 - **MongoDB** para catálogo de solo lectura (mercados, tipos de vehículo), alineado con `MarketId` y `VehicleTypeCatalogId` del modelo. Si se desactiva el catálogo (`Catalog:Enabled=false`), la búsqueda sigue siendo correcta pero sin etiquetas legibles.
-- **Periodos en UTC** con intervalo semiabierto `[inicio, fin)` para coincidir con solapamientos de reservas y evitar ambigüedades en límites.
+- **Periodos en UTC** con intervalo semiabierto `[inicio, fin)` para coincidir con solapamientos de reservas y evitar ambigüedades en límites. La aplicación valida además que la recogida no sea pasada respecto a `TimeProvider` (en producción el reloj del sistema), lo que permite fijar el tiempo en tests.
 - **Pruebas**: reglas de negocio cubiertas en **unitarias** (dominio + handlers con dobles); **integración** del endpoint `GET /api/vehicles/search` contra **contenedores reales** (Testcontainers) para cumplir el enunciado sin depender de MySQL/Mongo instalados en la máquina del desarrollador. Un test ligero del host sigue desactivando migraciones y catálogo para arranque rápido.
 - **Errores de API**: respuestas `409` / `400` / `404` en reservas usan **ProblemDetails** (RFC 7807) en lugar de DTOs ad hoc.
 - **CI**: GitHub Actions ejecuta `dotnet test`; los tests de integración con Testcontainers requieren **Docker** en el ejecutor (`ubuntu-latest` lo incluye).
@@ -31,6 +31,7 @@ Web API de búsqueda y reserva de vehículos para el reto técnico **Outlet Rent
 - Periodos de alquiler en **UTC**, intervalo semiabierto `[inicio, fin)`.
 - La **localidad de devolución** puede diferir de la de recogida; la disponibilidad en búsqueda se evalúa respecto a la **recogida** y al **mercado** de esa localidad.
 - Las reservas **pendientes** o **confirmadas** bloquean solapamientos; **canceladas** y **completadas** no.
+- **Ventana temporal en API (búsqueda y reserva):** la recogida no puede ser anterior a “ahora” (UTC) y la devolución debe ser **estrictamente posterior** a la recogida. Si no se cumple, la API responde **400** con ProblemDetails.
 
 ## Requisitos
 

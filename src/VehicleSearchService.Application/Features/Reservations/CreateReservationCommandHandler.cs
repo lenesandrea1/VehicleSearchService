@@ -1,6 +1,7 @@
 using VehicleSearchService.Application.Abstractions.Messaging;
 using VehicleSearchService.Application.Abstractions.Persistence;
 using VehicleSearchService.Application.Common.Exceptions;
+using VehicleSearchService.Application.Common.Validation;
 using VehicleSearchService.Domain.Entities;
 using VehicleSearchService.Domain.Events;
 using VehicleSearchService.Domain.Exceptions;
@@ -11,11 +12,15 @@ public sealed class CreateReservationCommandHandler(
     IVehicleReadRepository vehicles,
     ILocationReadRepository locations,
     IReservationRepository reservations,
-    IDomainEventPublisher domainEvents) : ICreateReservationCommandHandler
+    IDomainEventPublisher domainEvents,
+    TimeProvider time) : ICreateReservationCommandHandler
 {
     public async Task<CreateReservationResult> HandleAsync(CreateReservationCommand command, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
+
+        var utcNow = time.GetUtcNow().UtcDateTime;
+        RentalTimeWindowGuard.EnsureValidForRequest(command.PickupAtUtc, command.ReturnAtUtc, utcNow);
 
         var vehicle = await vehicles
             .GetByIdAsync(command.VehicleId, cancellationToken)

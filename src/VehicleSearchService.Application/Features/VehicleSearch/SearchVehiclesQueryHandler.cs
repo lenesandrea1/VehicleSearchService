@@ -1,5 +1,6 @@
 using VehicleSearchService.Application.Abstractions.Catalog;
 using VehicleSearchService.Application.Abstractions.Persistence;
+using VehicleSearchService.Application.Common.Validation;
 
 namespace VehicleSearchService.Application.Features.VehicleSearch;
 
@@ -7,11 +8,15 @@ public sealed class SearchVehiclesQueryHandler(
     ILocationReadRepository locations,
     IVehicleReadRepository vehicles,
     IReservationRepository reservations,
-    ICatalogReader catalog) : ISearchVehiclesQueryHandler
+    ICatalogReader catalog,
+    TimeProvider time) : ISearchVehiclesQueryHandler
 {
     public async Task<SearchVehiclesResult> HandleAsync(SearchVehiclesQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
+
+        var utcNow = time.GetUtcNow().UtcDateTime;
+        RentalTimeWindowGuard.EnsureValidForRequest(query.PickupAtUtc, query.ReturnAtUtc, utcNow);
 
         var pickupLocation = await locations
             .GetByIdAsync(query.PickupLocationId, cancellationToken)

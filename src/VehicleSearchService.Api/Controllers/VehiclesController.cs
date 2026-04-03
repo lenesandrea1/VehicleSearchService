@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using VehicleSearchService.Api.Contracts;
+using VehicleSearchService.Application.Common.Exceptions;
 using VehicleSearchService.Application.Features.VehicleSearch;
 
 namespace VehicleSearchService.Api.Controllers;
@@ -24,7 +26,17 @@ public sealed class VehiclesController(ISearchVehiclesQueryHandler searchHandler
             TimeNormalization.AsUtc(request.PickupAtUtc),
             TimeNormalization.AsUtc(request.ReturnAtUtc));
 
-        var result = await searchHandler.HandleAsync(query, cancellationToken).ConfigureAwait(false);
-        return Ok(result);
+        try
+        {
+            var result = await searchHandler.HandleAsync(query, cancellationToken).ConfigureAwait(false);
+            return Ok(result);
+        }
+        catch (InvalidRentalTimeWindowException ex)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Invalid rental period.",
+                detail: ex.Message);
+        }
     }
 }
