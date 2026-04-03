@@ -25,7 +25,7 @@ public sealed class Reservation
         ReservationStatus initialStatus = ReservationStatus.Confirmed)
     {
         if (returnAtUtc <= pickupAtUtc)
-            throw new DomainException("La fecha y hora de devolución deben ser posteriores a la de recogida.");
+            throw new DomainException("Return date and time must be after pickup date and time.");
 
         return new Reservation
         {
@@ -39,15 +39,31 @@ public sealed class Reservation
         };
     }
 
-    /// <summary>
-    /// Reserva que aún bloquea disponibilidad: pendiente o confirmada (no cancelada ni completada).
-    /// </summary>
+    /// <summary>Rehydrates a reservation from persistence (same invariants as stored row).</summary>
+    public static Reservation Rehydrate(
+        Guid id,
+        Guid vehicleId,
+        Guid pickupLocationId,
+        Guid returnLocationId,
+        DateTime pickupAtUtc,
+        DateTime returnAtUtc,
+        ReservationStatus status) =>
+        new()
+        {
+            Id = id,
+            VehicleId = vehicleId,
+            PickupLocationId = pickupLocationId,
+            ReturnLocationId = returnLocationId,
+            PickupAtUtc = pickupAtUtc,
+            ReturnAtUtc = returnAtUtc,
+            Status = status
+        };
+
+    /// <summary>Pending or confirmed reservations still block availability.</summary>
     public bool IsBlockingAvailability =>
         Status is ReservationStatus.Pending or ReservationStatus.Confirmed;
 
-    /// <summary>
-    /// Indica si esta reserva bloquea al vehículo indicado en el periodo [pickupUtc, returnUtc).
-    /// </summary>
+    /// <summary>Whether this reservation blocks <paramref name="vehicleId"/> for <c>[pickupUtc, returnUtc)</c>.</summary>
     public bool ConflictsWithRentalRequest(Guid vehicleId, DateTime pickupUtc, DateTime returnUtc) =>
         VehicleId == vehicleId
         && IsBlockingAvailability
@@ -58,14 +74,14 @@ public sealed class Reservation
         if (Status == ReservationStatus.Cancelled)
             return;
         if (Status == ReservationStatus.Completed)
-            throw new DomainException("No se puede cancelar una reserva ya completada.");
+            throw new DomainException("Cannot cancel a reservation that is already completed.");
         Status = ReservationStatus.Cancelled;
     }
 
     public void Complete()
     {
         if (Status == ReservationStatus.Cancelled)
-            throw new DomainException("No se puede completar una reserva cancelada.");
+            throw new DomainException("Cannot complete a cancelled reservation.");
         if (Status == ReservationStatus.Completed)
             return;
         Status = ReservationStatus.Completed;

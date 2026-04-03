@@ -6,12 +6,15 @@ public sealed class Vehicle
 {
     public required Guid Id { get; init; }
 
-    /// <summary>Localidad donde el vehículo está disponible para recogida.</summary>
+    /// <summary>Station where the vehicle is available for pickup.</summary>
     public required Guid LocationId { get; init; }
 
     public required VehicleStatus Status { get; init; }
 
-    /// <summary>Mercados (países) en los que el vehículo puede operar; debe incluir el mercado de la localidad solicitada.</summary>
+    /// <summary>Optional catalog key for vehicle type (e.g. MongoDB document id).</summary>
+    public string? VehicleTypeCatalogId { get; init; }
+
+    /// <summary>Markets where this vehicle may operate; must include the pickup location's market.</summary>
     public required IReadOnlySet<string> EnabledMarketIds { get; init; }
 
     public bool IsListedAsAvailable => Status == VehicleStatus.Available;
@@ -20,9 +23,7 @@ public sealed class Vehicle
 
     public bool IsEnabledForMarket(string marketId) => EnabledMarketIds.Contains(marketId);
 
-    /// <summary>
-    /// Reglas de estación y mercado para la localidad de recogida (sin comprobar reservas).
-    /// </summary>
+    /// <summary>Pickup station and market rules only (does not evaluate reservations).</summary>
     public bool SatisfiesPickupStationAndMarket(Location pickupLocation)
     {
         ArgumentNullException.ThrowIfNull(pickupLocation);
@@ -32,8 +33,8 @@ public sealed class Vehicle
     }
 
     /// <summary>
-    /// Determina si el vehículo puede ofertarse en búsqueda para el periodo dado.
-    /// <paramref name="reservations"/> debe contener solo reservas del mismo vehículo.
+    /// Whether the vehicle may appear in search results for the requested window.
+    /// <paramref name="reservations"/> must contain reservations for this vehicle only.
     /// </summary>
     public bool CanBeOfferedInSearch(
         Location pickupLocation,

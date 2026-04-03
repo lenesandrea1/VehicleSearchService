@@ -1,11 +1,11 @@
 namespace VehicleSearchService.Domain.Entities;
 
-/// <summary>Sede de recogida o devolución; <see cref="MarketId"/> enlaza con el catálogo (p. ej. Mongo).</summary>
+/// <summary>Pickup or return station; <see cref="MarketId"/> references catalog data (e.g. MongoDB).</summary>
 public sealed class Location
 {
     public required Guid Id { get; init; }
 
-    /// <summary>Identificador del mercado/país en catálogo.</summary>
+    /// <summary>Market / country identifier in the catalog.</summary>
     public required string MarketId { get; init; }
 
     public string? Name { get; init; }

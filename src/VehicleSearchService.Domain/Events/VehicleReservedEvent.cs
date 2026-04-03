@@ -2,7 +2,7 @@ using VehicleSearchService.Domain.Common;
 
 namespace VehicleSearchService.Domain.Events;
 
-/// <summary>Emitido cuando se crea una reserva confirmada (o pendiente, según la aplicación).</summary>
+/// <summary>Raised when a reservation is created (confirmed or pending, depending on application policy).</summary>
 public sealed class VehicleReservedEvent : IDomainEvent
 {
     public VehicleReservedEvent(

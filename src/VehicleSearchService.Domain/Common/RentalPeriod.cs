@@ -1,12 +1,12 @@
 namespace VehicleSearchService.Domain.Common;
 
 /// <summary>
-/// Utilidades para periodos de alquiler en UTC.
-/// Se modela el intervalo semiabierto <c>[inicio, fin)</c>: al instante <c>fin</c> el vehículo vuelve a estar libre.
+/// UTC rental interval helpers.
+/// Intervals are half-open <c>[start, end)</c>: the vehicle is free again at <c>end</c>.
 /// </summary>
 public static class RentalPeriod
 {
-    /// <summary>Indica si dos periodos [aStart, aEnd) y [bStart, bEnd) se intersectan.</summary>
+    /// <summary>Returns whether <c>[aStart, aEnd)</c> and <c>[bStart, bEnd)</c> intersect.</summary>
     public static bool Overlaps(DateTime aStart, DateTime aEnd, DateTime bStart, DateTime bEnd) =>
         aStart < bEnd && bStart < aEnd;
 }
