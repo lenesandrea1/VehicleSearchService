@@ -1,3 +1,4 @@
+using VehicleSearchService.Application.Abstractions.Catalog;
 using VehicleSearchService.Application.Abstractions.Persistence;
 
 namespace VehicleSearchService.Application.Features.VehicleSearch;
@@ -5,7 +6,8 @@ namespace VehicleSearchService.Application.Features.VehicleSearch;
 public sealed class SearchVehiclesQueryHandler(
     ILocationReadRepository locations,
     IVehicleReadRepository vehicles,
-    IReservationRepository reservations) : ISearchVehiclesQueryHandler
+    IReservationRepository reservations,
+    ICatalogReader catalog) : ISearchVehiclesQueryHandler
 {
     public async Task<SearchVehiclesResult> HandleAsync(SearchVehiclesQuery query, CancellationToken cancellationToken = default)
     {
@@ -16,14 +18,22 @@ public sealed class SearchVehiclesQueryHandler(
             .ConfigureAwait(false);
 
         if (pickupLocation is null)
-            return new SearchVehiclesResult(Array.Empty<VehicleSearchItemDto>());
+            return new SearchVehiclesResult(Array.Empty<VehicleSearchItemDto>(), null, null);
 
         var candidates = await vehicles
             .ListCandidatesAtLocationAsync(query.PickupLocationId, cancellationToken)
             .ConfigureAwait(false);
 
         if (candidates.Count == 0)
-            return new SearchVehiclesResult(Array.Empty<VehicleSearchItemDto>());
+        {
+            var onlyMarket = await catalog
+                .GetMarketAsync(pickupLocation.MarketId, cancellationToken)
+                .ConfigureAwait(false);
+            return new SearchVehiclesResult(
+                Array.Empty<VehicleSearchItemDto>(),
+                pickupLocation.MarketId,
+                onlyMarket?.DisplayName);
+        }
 
         var vehicleIds = candidates.Select(v => v.Id).ToArray();
         var blocking = await reservations
@@ -41,9 +51,38 @@ public sealed class SearchVehiclesQueryHandler(
             if (!vehicle.CanBeOfferedInSearch(pickupLocation, query.PickupAtUtc, query.ReturnAtUtc, list))
                 continue;
 
-            items.Add(new VehicleSearchItemDto(vehicle.Id, vehicle.LocationId, vehicle.VehicleTypeCatalogId));
+            items.Add(new VehicleSearchItemDto(vehicle.Id, vehicle.LocationId, vehicle.VehicleTypeCatalogId, null));
         }
 
-        return new SearchVehiclesResult(items);
+        if (items.Count == 0)
+        {
+            var m = await catalog.GetMarketAsync(pickupLocation.MarketId, cancellationToken).ConfigureAwait(false);
+            return new SearchVehiclesResult(items, pickupLocation.MarketId, m?.DisplayName);
+        }
+
+        var distinctTypeIds = items
+            .Select(i => i.VehicleTypeCatalogId)
+            .Where(static id => !string.IsNullOrWhiteSpace(id))
+            .Select(static id => id!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        var marketTask = catalog.GetMarketAsync(pickupLocation.MarketId, cancellationToken);
+        var typesTask = catalog.GetVehicleTypesAsync(distinctTypeIds, cancellationToken);
+        await Task.WhenAll(marketTask, typesTask).ConfigureAwait(false);
+
+        var marketEntry = await marketTask.ConfigureAwait(false);
+        var typeMap = await typesTask.ConfigureAwait(false);
+
+        var withLabels = items.ConvertAll(dto =>
+        {
+            string? label = null;
+            if (dto.VehicleTypeCatalogId is { } cid && typeMap.TryGetValue(cid, out var entry))
+                label = entry.DisplayName;
+
+            return dto with { VehicleTypeDisplayName = label };
+        });
+
+        return new SearchVehiclesResult(withLabels, pickupLocation.MarketId, marketEntry?.DisplayName);
     }
 }

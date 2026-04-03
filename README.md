@@ -8,7 +8,7 @@ Web API de búsqueda y reserva de vehículos para el reto técnico **Outlet Rent
 |----------|-----|
 | `VehicleSearchService.Domain` | Entidades, reglas de negocio, eventos de dominio |
 | `VehicleSearchService.Application` | Puertos (persistencia, mensajería), queries/commands, handlers |
-| `VehicleSearchService.Infrastructure` | EF Core + MySQL, repositorios, publicador in-memory de eventos |
+| `VehicleSearchService.Infrastructure` | EF Core + MySQL, MongoDB para catálogo, publicador in-memory de eventos |
 | `VehicleSearchService.Api` | Host HTTP, Swagger, migraciones al arranque (configurable) |
 | `VehicleSearchService.Tests.Unit` | Especificaciones del dominio |
 | `VehicleSearchService.Tests.Integration` | Host de prueba sin migraciones |
@@ -23,6 +23,7 @@ Web API de búsqueda y reserva de vehículos para el reto técnico **Outlet Rent
 
 - [.NET SDK 8.0](https://dotnet.microsoft.com/download/dotnet/8.0) (o superior con `rollForward` en `global.json`).
 - **MySQL 8** (local o Docker).
+- **MongoDB** (local o Docker) si dejas `Catalog:Enabled` en `true` (valor por defecto).
 
 ## Base de datos con Docker
 
@@ -30,7 +31,14 @@ Web API de búsqueda y reserva de vehículos para el reto técnico **Outlet Rent
 docker compose up -d
 ```
 
-Cadena de conexión por defecto en `appsettings.json`: usuario `root`, contraseña `local`, base `vehiclesearch`, puerto `3306`.
+Suben **MongoDB 7** (`27017`) y **MySQL 8** (`3306`). Cadena MySQL por defecto: usuario `root`, contraseña `local`, base `vehiclesearch`. El catálogo usa `mongodb://localhost:27017` y base `vehiclesearch_catalog` (`appsettings.json` → sección `Catalog`).
+
+### Catálogo en MongoDB
+
+Colecciones `markets` y `vehicle_types`: la API rellena datos mínimos al arranque si están vacías (`Catalog:SeedOnStartup`), coherentes con el seed relacional (`EU-ES`, `vt-economy`, `vt-suv`). La búsqueda devuelve nombres legibles (`pickupMarketDisplayName`, `vehicleTypeDisplayName` por ítem).
+
+- Sin Mongo (solo MySQL): pon `Catalog:Enabled` en `false`; la búsqueda sigue funcionando pero sin etiquetas del catálogo.
+- En **tests de integración** del host ya se fuerza `Catalog:Enabled=false` para no depender del puerto 27017.
 
 ### MySQL instalado en Windows (sin Docker)
 
@@ -59,7 +67,7 @@ Al arranque, si `RunMigrations` es `true`, se aplican migraciones EF y se ejecut
 
 ### Endpoints principales
 
-- `GET /api/vehicles/search?pickupLocationId=&returnLocationId=&pickupAtUtc=&returnAtUtc=` (ISO 8601 recomendado).
+- `GET /api/vehicles/search?pickupLocationId=&returnLocationId=&pickupAtUtc=&returnAtUtc=` (ISO 8601 recomendado). La respuesta incluye `items` y, si el catálogo está activo, `pickupMarketId`, `pickupMarketDisplayName` y por vehículo `vehicleTypeDisplayName`.
 - `POST /api/reservations` con cuerpo JSON (`vehicleId`, `pickupLocationId`, `returnLocationId`, `pickupAtUtc`, `returnAtUtc`).
 
 ### Datos de ejemplo (seed)
@@ -71,10 +79,6 @@ Identificadores estables en `KnownIds` (Infrastructure): Madrid, Barcelona, dos 
 ```bash
 dotnet ef migrations add Nombre --project src/VehicleSearchService.Infrastructure --startup-project src/VehicleSearchService.Api --output-dir Persistence/Migrations
 ```
-
-## Pendiente respecto al enunciado
-
-- **MongoDB** para catálogo (mercados / tipos de vehículo): el modelo ya expone `MarketId` y `VehicleTypeCatalogId`; falta integrar lectura desde Mongo.
 
 ## Licencia
 

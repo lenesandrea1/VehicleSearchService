@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using MongoDB.Driver;
 using VehicleSearchService.Application;
 using VehicleSearchService.Infrastructure;
+using VehicleSearchService.Infrastructure.Catalog;
 using VehicleSearchService.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -29,6 +31,19 @@ if (app.Configuration.GetValue("RunMigrations", true))
     var db = scope.ServiceProvider.GetRequiredService<VssDbContext>();
     await db.Database.MigrateAsync().ConfigureAwait(false);
     await PersistenceSeeding.SeedAsync(db).ConfigureAwait(false);
+}
+
+if (app.Configuration.GetValue("Catalog:Enabled", true)
+    && app.Configuration.GetValue("Catalog:SeedOnStartup", true))
+{
+    var mongoClient = app.Services.GetService<IMongoClient>();
+    var dbName = app.Configuration["Catalog:DatabaseName"] ?? "vehiclesearch_catalog";
+    if (mongoClient is not null)
+    {
+        await MongoCatalogSeed
+            .EnsureAsync(mongoClient.GetDatabase(dbName))
+            .ConfigureAwait(false);
+    }
 }
 
 await app.RunAsync().ConfigureAwait(false);
