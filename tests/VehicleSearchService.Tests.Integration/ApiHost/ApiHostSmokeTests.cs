@@ -1,12 +1,10 @@
-using Microsoft.AspNetCore.Mvc.Testing;
-
 namespace VehicleSearchService.Tests.Integration.ApiHost;
 
-public sealed class ApiHostSmokeTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class ApiHostSmokeTests : IClassFixture<ApiHostFixture>
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly ApiHostFixture _factory;
 
-    public ApiHostSmokeTests(WebApplicationFactory<Program> factory) => _factory = factory;
+    public ApiHostSmokeTests(ApiHostFixture factory) => _factory = factory;
 
     [Fact]
     public void WebApplicationFactory_creates_HttpClient_without_throwing()

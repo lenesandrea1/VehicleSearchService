@@ -19,7 +19,7 @@ public sealed class ReservationTests
             pickup);
 
         act.Should().Throw<DomainException>()
-            .WithMessage("*devolución*");
+            .WithMessage("*Return date*");
     }
 
     [Fact]

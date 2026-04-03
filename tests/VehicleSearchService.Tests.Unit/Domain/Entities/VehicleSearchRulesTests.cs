@@ -15,6 +15,7 @@ public sealed class VehicleSearchRulesTests
             Id = Guid.NewGuid(),
             LocationId = locationId,
             Status = status,
+            VehicleTypeCatalogId = null,
             EnabledMarketIds = new HashSet<string> { marketId }
         };
 
