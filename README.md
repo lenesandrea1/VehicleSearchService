@@ -1,6 +1,8 @@
 # VehicleSearchService
 
-Web API de búsqueda y reserva de vehículos para el reto técnico **Outlet Rental Cars**, con **Clean Architecture**, dominio con comportamiento explícito y contratos de aplicación separados de la infraestructura.
+## Descripción
+
+Web API de búsqueda y reserva de vehículos para el reto técnico **Outlet Rental Cars**. Expone una **query** HTTP para buscar vehículos disponibles (localidad de recogida y devolución, ventana en UTC) y un **command** para crear reservas, aplicando reglas de disponibilidad por estación, mercado, estado del vehículo y solapamiento con reservas activas. El dominio está aislado en **Clean Architecture**; los datos transaccionales viven en **MySQL** y el catálogo descriptivo en **MongoDB**.
 
 ## Estructura
 
@@ -11,7 +13,18 @@ Web API de búsqueda y reserva de vehículos para el reto técnico **Outlet Rent
 | `VehicleSearchService.Infrastructure` | EF Core + MySQL, MongoDB para catálogo, publicador in-memory de eventos |
 | `VehicleSearchService.Api` | Host HTTP, Swagger, migraciones al arranque (configurable) |
 | `VehicleSearchService.Tests.Unit` | Especificaciones del dominio |
-| `VehicleSearchService.Tests.Integration` | Host de prueba sin migraciones |
+| `VehicleSearchService.Tests.Integration` | Pruebas con **Testcontainers** (MySQL + Mongo) para el endpoint de búsqueda; smoke del host sin contenedores |
+
+## Decisiones técnicas
+
+- **Clean Architecture**: el dominio no referencia infraestructura; la aplicación define puertos (`ILocationReadRepository`, `ICatalogReader`, etc.) y los adaptadores viven en Infrastructure.
+- **CQRS ligero**: la búsqueda es una **query** con handler dedicado; la reserva es un **command** con otro handler. No hay bus de mensajes global: los eventos de dominio se publican por un contrato (`IDomainEventPublisher`) con una implementación **in-memory** y un manejador que registra en log, suficiente para el alcance del reto.
+- **MySQL + EF Core** para datos transaccionales (localidades, vehículos, reservas) con **seed** idempotente y migraciones al arranque opcionales vía configuración.
+- **MongoDB** para catálogo de solo lectura (mercados, tipos de vehículo), alineado con `MarketId` y `VehicleTypeCatalogId` del modelo. Si se desactiva el catálogo (`Catalog:Enabled=false`), la búsqueda sigue siendo correcta pero sin etiquetas legibles.
+- **Periodos en UTC** con intervalo semiabierto `[inicio, fin)` para coincidir con solapamientos de reservas y evitar ambigüedades en límites.
+- **Pruebas**: reglas de negocio cubiertas en **unitarias** (dominio + handlers con dobles); **integración** del endpoint `GET /api/vehicles/search` contra **contenedores reales** (Testcontainers) para cumplir el enunciado sin depender de MySQL/Mongo instalados en la máquina del desarrollador. Un test ligero del host sigue desactivando migraciones y catálogo para arranque rápido.
+- **Errores de API**: respuestas `409` / `400` / `404` en reservas usan **ProblemDetails** (RFC 7807) en lugar de DTOs ad hoc.
+- **CI**: GitHub Actions ejecuta `dotnet test`; los tests de integración con Testcontainers requieren **Docker** en el ejecutor (`ubuntu-latest` lo incluye).
 
 ## Convenciones de dominio
 
@@ -38,7 +51,7 @@ Suben **MongoDB 7** (`27017`) y **MySQL 8** (`3306`). Cadena MySQL por defecto: 
 Colecciones `markets` y `vehicle_types`: la API rellena datos mínimos al arranque si están vacías (`Catalog:SeedOnStartup`), coherentes con el seed relacional (`EU-ES`, `vt-economy`, `vt-suv`). La búsqueda devuelve nombres legibles (`pickupMarketDisplayName`, `vehicleTypeDisplayName` por ítem).
 
 - Sin Mongo (solo MySQL): pon `Catalog:Enabled` en `false`; la búsqueda sigue funcionando pero sin etiquetas del catálogo.
-- En **tests de integración** del host ya se fuerza `Catalog:Enabled=false` para no depender del puerto 27017.
+- El **smoke** del `WebApplicationFactory` fuerza `Catalog:Enabled=false` para no requerir Mongo. Los tests del endpoint de búsqueda usan contenedor Mongo dedicado.
 
 ### MySQL instalado en Windows (sin Docker)
 
@@ -60,6 +73,8 @@ dotnet build
 dotnet test
 dotnet run --project src/VehicleSearchService.Api
 ```
+
+Los tests de integración del endpoint de búsqueda levantan **MySQL 8** y **MongoDB 7** vía Testcontainers: hace falta **Docker** en ejecución (local o en CI).
 
 Al arranque, si `RunMigrations` es `true`, se aplican migraciones EF y se ejecuta el **seed** (solo si la base está vacía).
 

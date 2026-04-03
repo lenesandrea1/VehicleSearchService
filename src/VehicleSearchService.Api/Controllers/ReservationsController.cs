@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using VehicleSearchService.Api.Contracts;
 using VehicleSearchService.Application.Common.Exceptions;
@@ -35,23 +36,29 @@ public sealed class ReservationsController(ICreateReservationCommandHandler crea
         }
         catch (VehicleNotFoundException)
         {
-            return NotFound();
+            return Problem(statusCode: StatusCodes.Status404NotFound, title: "Vehicle not found.");
         }
         catch (PickupLocationNotFoundException)
         {
-            return NotFound();
+            return Problem(statusCode: StatusCodes.Status404NotFound, title: "Pickup location not found.");
         }
         catch (ReturnLocationNotFoundException)
         {
-            return NotFound();
+            return Problem(statusCode: StatusCodes.Status404NotFound, title: "Return location not found.");
         }
         catch (VehicleNotAvailableException ex)
         {
-            return Conflict(new { message = ex.Message });
+            return Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Vehicle not available.",
+                detail: ex.Message);
         }
         catch (InvalidReservationPeriodException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            return Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Invalid reservation period.",
+                detail: ex.Message);
         }
     }
 }
